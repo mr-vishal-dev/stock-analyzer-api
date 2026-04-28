@@ -1,19 +1,24 @@
 """
-Fetch historical stock data from Yahoo Finance (yfinance)
+Fetch historical stock data from AlphaVantage API
 """
 
-import yfinance as yf
+import requests
 from typing import List, Tuple, Optional
+
+# AlphaVantage API Key - Add your key here
+ALPHA_VANTAGE_API_KEY = "0UIEP4QBUXMGLRGI"
+
+BASE_URL = "https://www.alphavantage.co/query"
 
 
 def fetch_stock_data(symbol: str, period: str = '3mo', interval: str = '1d') -> Tuple[List[float], dict]:
     """
-    Fetch historical stock data from Yahoo Finance
+    Fetch historical stock data from AlphaVantage API
     
     Args:
-        symbol: Stock symbol (e.g., 'INFY.NS', 'AAPL', 'GOOGL')
-        period: Time period ('1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'max')
-        interval: Data interval ('1m', '5m', '15m', '30m', '60m', '1d', '1wk', '1mo')
+        symbol: Stock symbol (e.g., 'INFY', 'AAPL', 'GOOGL')
+        period: Time period ('1d', '5d', '1mo', '3mo', '6mo', '1y') - filters actual days
+        interval: Data interval ('1m', '5m', '15m', '30m', '60m', '1d', '1wk', '1mo') - not used
     
     Returns:
         Tuple of (prices_list, stock_info_dict)
@@ -21,46 +26,65 @@ def fetch_stock_data(symbol: str, period: str = '3mo', interval: str = '1d') -> 
         stock_info_dict: Dictionary with stock info (name, sector, etc.)
     """
     try:
-        print(f"Fetching {symbol} data from Yahoo Finance...")
+        print(f"Fetching {symbol} data from AlphaVantage...")
         
-        # Download stock data
-        ticker = yf.Ticker(symbol)
-        # hist = ticker.history(period=period, interval=interval)
-        hist = yf.download(
-                    symbol,
-                    period=period,
-                    interval=interval,
-                    progress=False,
-                    threads=False
-                    )
-        if hist.empty:
+        # Map period to number of trading days
+        period_days = {
+            '1d': 1,
+            '5d': 5,
+            '1mo': 22,    # ~22 trading days per month
+            '3mo': 66,    # ~22 * 3 months
+            '6mo': 132,   # ~22 * 6 months
+            '1y': 252,    # ~252 trading days per year
+            '2y': 504,
+            '5y': 1260,
+        }
+        
+        # Get the number of days to fetch
+        days_to_fetch = period_days.get(period, 66)  # default to 3mo
+        
+        # Use compact for small requests, full for larger
+        outputsize = "compact" if days_to_fetch <= 100 else "full"
+        
+        # Fetch daily time series
+        params = {
+            "function": "TIME_SERIES_DAILY",
+            "symbol": symbol,
+            "outputsize": outputsize,
+            "apikey": ALPHA_VANTAGE_API_KEY
+        }
+        
+        response = requests.get(BASE_URL, params=params, timeout=30)
+        data = response.json()
+        
+        # Check for rate limit or errors
+        if "Note" in data:
+            print("⚠️ Rate limit hit - AlphaVantage free tier limit")
+            return [], {}
+        if "Error Message" in data:
+            print(f"⚠️ API Error: {data.get('Error Message')}")
+            return [], {}
+        
+        time_series = data.get("Time Series (Daily)", {})
+        
+        if not time_series:
             print(f"⚠️ No data for {symbol}")
             return [], {}
-        # if hist.empty:
-        #     raise ValueError(f"No data found for symbol: {symbol}")
         
-        # Extract closing prices
-        prices = hist['Close'].tolist()
+        # Extract closing prices (in chronological order)
+        all_prices = [
+            (date, float(day["4. close"]))
+            for date, day in time_series.items()
+        ]
+        all_prices.sort(key=lambda x: x[0])  # Sort by date ascending
         
-        # Get stock info
-        try:
-            info = ticker.info
-            stock_info = {
-                'name': info.get('longName', symbol),
-                'sector': info.get('sector', 'N/A'),
-                'industry': info.get('industry', 'N/A'),
-                'country': info.get('country', 'N/A'),
-                'currency': info.get('currency', 'USD'),
-                'market_cap': info.get('marketCap', 'N/A'),
-                'pe_ratio': info.get('trailingPE', 'N/A'),
-                'dividend_yield': info.get('dividendYield', 'N/A'),
-                'fifty_two_week_high': info.get('fiftyTwoWeekHigh', 'N/A'),
-                'fifty_two_week_low': info.get('fiftyTwoWeekLow', 'N/A'),
-            }
-        except:
-            stock_info = {'name': symbol}
+        # Filter by period (number of days)
+        prices = [price for _, price in all_prices[-days_to_fetch:]]
         
-        print(f"✓ Retrieved {len(prices)} data points for {symbol}")
+        # Get stock info from OVERVIEW endpoint
+        stock_info = get_stock_info(symbol)
+        
+        print(f"✓ Retrieved {len(prices)} data points for {symbol} (period: {period}, days: {days_to_fetch})")
         
         return prices, stock_info
     
@@ -71,7 +95,7 @@ def fetch_stock_data(symbol: str, period: str = '3mo', interval: str = '1d') -> 
 
 def get_current_price(symbol: str) -> Optional[float]:
     """
-    Get current stock price
+    Get current stock price using AlphaVantage GLOBAL_QUOTE
     
     Args:
         symbol: Stock symbol
@@ -80,10 +104,19 @@ def get_current_price(symbol: str) -> Optional[float]:
         Current price or None if error
     """
     try:
-        ticker = yf.Ticker(symbol)
-        data = ticker.history(period='1d')
-        if not data.empty:
-            return float(data['Close'].iloc[-1])
+        params = {
+            "function": "GLOBAL_QUOTE",
+            "symbol": symbol,
+            "apikey": ALPHA_VANTAGE_API_KEY
+        }
+        
+        response = requests.get(BASE_URL, params=params, timeout=30)
+        data = response.json()
+        
+        quote = data.get("Global Quote", {})
+        if quote and "05. price" in quote:
+            return float(quote["05. price"])
+    
     except Exception as e:
         print(f"Error getting current price: {e}")
     
@@ -92,7 +125,7 @@ def get_current_price(symbol: str) -> Optional[float]:
 
 def get_stock_info(symbol: str) -> dict:
     """
-    Get comprehensive stock information
+    Get comprehensive stock information from AlphaVantage OVERVIEW endpoint
     
     Args:
         symbol: Stock symbol
@@ -101,8 +134,38 @@ def get_stock_info(symbol: str) -> dict:
         Dictionary with stock info
     """
     try:
-        ticker = yf.Ticker(symbol)
-        return ticker.info
+        params = {
+            "function": "OVERVIEW",
+            "symbol": symbol,
+            "apikey": ALPHA_VANTAGE_API_KEY
+        }
+        
+        response = requests.get(BASE_URL, params=params, timeout=30)
+        data = response.json()
+        
+        if not data or "Error Message" in data:
+            return {'name': symbol}
+        
+        # Map AlphaVantage fields to our stock_info format
+        stock_info = {
+            'name': data.get('Name', symbol),
+            'sector': data.get('Sector', 'N/A'),
+            'industry': data.get('Industry', 'N/A'),
+            'country': data.get('Country', 'N/A'),
+            'currency': data.get('Currency', 'USD'),
+            'market_cap': data.get('MarketCapitalization', 'N/A'),
+            'pe_ratio': data.get('PERatio', 'N/A'),
+            'dividend_yield': data.get('DividendYield', 'N/A'),
+            'fifty_two_week_high': data.get('52WeekHigh', 'N/A'),
+            'fifty_two_week_low': data.get('52WeekLow', 'N/A'),
+            'description': data.get('Description', ''),
+            'exchange': data.get('Exchange', 'N/A'),
+            'ceo': data.get('CEO', 'N/A'),
+            'website': data.get('Website', 'N/A'),
+        }
+        
+        return stock_info
+    
     except Exception as e:
         print(f"Error getting stock info: {e}")
-        return {}
+        return {'name': symbol}
