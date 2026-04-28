@@ -25,10 +25,19 @@ def fetch_stock_data(symbol: str, period: str = '3mo', interval: str = '1d') -> 
         
         # Download stock data
         ticker = yf.Ticker(symbol)
-        hist = ticker.history(period=period, interval=interval)
-        
+        # hist = ticker.history(period=period, interval=interval)
+        hist = yf.download(
+                    symbol,
+                    period=period,
+                    interval=interval,
+                    progress=False,
+                    threads=False
+                    )
         if hist.empty:
-            raise ValueError(f"No data found for symbol: {symbol}")
+            print(f"⚠️ No data for {symbol}")
+            return [], {}
+        # if hist.empty:
+        #     raise ValueError(f"No data found for symbol: {symbol}")
         
         # Extract closing prices
         prices = hist['Close'].tolist()

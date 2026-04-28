@@ -38,18 +38,20 @@ async def health():
     return {"status": "ok", "service": "Stock Recommender API"}
 
 @app.post("/recommend")
-async def get_recommendation_api(request: dict):
+async def get_recommendation_api(request: RecommendationRequest):
     try:
-        symbol = request.get('symbol', '').upper()
-        period = request.get('period', '3mo')
+        symbol = request.symbol.upper()
+        period = request.period
         
         print(f"Processing {symbol}...")
         
         # Fetch historical data
         prices, stock_info = fetch_stock_data(symbol, period=period)
-        
+        if not prices:
+            raise HTTPException(status_code=400,detail=f"Stock data unavailable for {symbol} (Yahoo blocked or failed)")
+       
         if not prices or len(prices) < 5:
-            raise HTTPException(status_code=400, detail=f"Insufficient data for {symbol}")
+             raise HTTPException(status_code=400,detail=f"Stock data unavailable or insufficient for {symbol}")
         
         print(f"Fetched {len(prices)} prices")
         
