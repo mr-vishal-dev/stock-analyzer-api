@@ -61,7 +61,7 @@ def fetch_stock_data(symbol: str, period: str = '3mo', interval: str = '1d') -> 
         data = response.json()
         
         # Debug: Print first few keys of response
-        print(f"DEBUG: Response keys: {list(data.keys())[:5]}")
+        print(f"DEBUG: Response keys: {list(data.keys())}")
         
         # Check for rate limit or errors
         if "Note" in data:
@@ -71,11 +71,18 @@ def fetch_stock_data(symbol: str, period: str = '3mo', interval: str = '1d') -> 
             print(f"⚠️ API Error: {data.get('Error Message')}")
             return [], {}
         
-        time_series = data.get("Time Series (Daily)", {})
+        # Find the time series key dynamically
+        time_series = {}
+        for key in data.keys():
+            if "Time Series" in key or "time" in key.lower():
+                if isinstance(data[key], dict):
+                    time_series = data[key]
+                    print(f"DEBUG: Found time series with key: {key}")
+                    break
         
         if not time_series:
             print(f"⚠️ No data for {symbol}")
-            print(f"DEBUG: Available keys: {list(data.keys())}")
+            print(f"DEBUG: Full response: {data}")
             return [], {}
         
         # Extract closing prices (in chronological order)
@@ -150,7 +157,12 @@ def get_stock_info(symbol: str) -> dict:
         response = requests.get(BASE_URL, params=params, timeout=30)
         data = response.json()
         
+        # Debug: Print response keys
+        print(f"DEBUG get_stock_info: Response keys: {list(data.keys())}")
+        
         if not data or "Error Message" in data:
+            print(f"DEBUG get_stock_info: Error or empty: {data}")
+            return {'name': symbol}
             return {'name': symbol}
         
         # Map AlphaVantage fields to our stock_info format
