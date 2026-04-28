@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
+import os
 import uvicorn
 from stockRecommender import get_recommendation
 from data_fetcher import fetch_stock_data
@@ -27,7 +28,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-NEWS_API_KEY = "3c550a7fcef74e20ae9698999d0ff4e1"
+# NewsAPI Key - MUST be set in environment variables
+NEWS_API_KEY = os.environ.get("NEWS_API_KEY")
+if not NEWS_API_KEY:
+    raise ValueError("NEWS_API_KEY environment variable not set!")
 
 class RecommendationRequest(BaseModel):
     symbol: str

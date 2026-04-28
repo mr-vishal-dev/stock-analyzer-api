@@ -2,11 +2,14 @@
 Fetch historical stock data from AlphaVantage API
 """
 
+import os
 import requests
 from typing import List, Tuple, Optional
 
-# AlphaVantage API Key - Add your key here
-ALPHA_VANTAGE_API_KEY = "0UIEP4QBUXMGLRGI"
+# AlphaVantage API Key - MUST be set in environment variables
+ALPHA_VANTAGE_API_KEY = os.environ.get("ALPHA_VANTAGE_API_KEY")
+if not ALPHA_VANTAGE_API_KEY:
+    raise ValueError("ALPHA_VANTAGE_API_KEY environment variable not set!")
 
 BASE_URL = "https://www.alphavantage.co/query"
 
@@ -57,6 +60,9 @@ def fetch_stock_data(symbol: str, period: str = '3mo', interval: str = '1d') -> 
         response = requests.get(BASE_URL, params=params, timeout=30)
         data = response.json()
         
+        # Debug: Print first few keys of response
+        print(f"DEBUG: Response keys: {list(data.keys())[:5]}")
+        
         # Check for rate limit or errors
         if "Note" in data:
             print("⚠️ Rate limit hit - AlphaVantage free tier limit")
@@ -69,6 +75,7 @@ def fetch_stock_data(symbol: str, period: str = '3mo', interval: str = '1d') -> 
         
         if not time_series:
             print(f"⚠️ No data for {symbol}")
+            print(f"DEBUG: Available keys: {list(data.keys())}")
             return [], {}
         
         # Extract closing prices (in chronological order)
