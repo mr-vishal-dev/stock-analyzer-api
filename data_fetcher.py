@@ -1,22 +1,75 @@
 """
-Fetch historical stock data from AlphaVantage API
+Fetch historical stock data - uses yfinance as primary source
 """
 
 import os
 import requests
 from typing import List, Tuple, Optional
+import yfinance as yf
 
-# AlphaVantage API Key - MUST be set in environment variables
-ALPHA_VANTAGE_API_KEY = os.environ.get("ALPHA_VANTAGE_API_KEY")
+# AlphaVantage API Key - optional, used as backup
+ALPHA_VANTAGE_API_KEY = os.environ.get("ALPHA_VANTAGE_API_KEY", "")
 if not ALPHA_VANTAGE_API_KEY:
-    raise ValueError("ALPHA_VANTAGE_API_KEY environment variable not set!")
+    print("⚠️  ALPHA_VANTAGE_API_KEY not set - using yfinance only")
 
 BASE_URL = "https://www.alphavantage.co/query"
 
 
+def fetch_with_yfinance(symbol: str, period: str = '3mo') -> Tuple[List[float], dict]:
+    """
+    Fallback: Fetch stock data using yfinance.
+    
+    Args:
+        symbol: Stock symbol (e.g., 'INFY', 'AAPL', 'GOOGL')
+        period: Time period ('1d', '5d', '1mo', '3mo', '6mo', '1y')
+    
+    Returns:
+        Tuple of (prices_list, stock_info_dict)
+    """
+    try:
+        print(f"[yfinance] Fetching {symbol} data...")
+        ticker = yf.Ticker(symbol)
+        
+        # Map period to yfinance period
+        period_map = {
+            '1d': '1d',
+            '5d': '5d',
+            '1mo': '1mo',
+            '3mo': '3mo',
+            '6mo': '6mo',
+            '1y': '1y',
+            '2y': '2y',
+            '5y': '5y',
+        }
+        yf_period = period_map.get(period, '3mo')
+        
+        hist = ticker.history(period=yf_period)
+        
+        if hist.empty:
+            print(f"[yfinance] No data for {symbol}")
+            return [], {}
+        
+        # Extract closing prices
+        prices = hist['Close'].tolist()
+        
+        # Get stock info
+        stock_info = {
+            'name': ticker.info.get('shortName', symbol),
+            'sector': ticker.info.get('sector', ''),
+            'industry': ticker.info.get('industry', ''),
+        }
+        
+        print(f"[yfinance] Retrieved {len(prices)} data points for {symbol}")
+        return prices, stock_info
+        
+    except Exception as e:
+        print(f"[yfinance] Error: {e}")
+        return [], {}
+
+
 def fetch_stock_data(symbol: str, period: str = '3mo', interval: str = '1d') -> Tuple[List[float], dict]:
     """
-    Fetch historical stock data from AlphaVantage API
+    Fetch historical stock data - uses yfinance as primary source
     
     Args:
         symbol: Stock symbol (e.g., 'INFY', 'AAPL', 'GOOGL')
@@ -27,6 +80,29 @@ def fetch_stock_data(symbol: str, period: str = '3mo', interval: str = '1d') -> 
         Tuple of (prices_list, stock_info_dict)
         prices_list: List of closing prices in chronological order
         stock_info_dict: Dictionary with stock info (name, sector, etc.)
+    """
+    # Try yfinance first (more reliable, no rate limits)
+    print(f"Fetching {symbol} data via yfinance...")
+    prices, stock_info = fetch_with_yfinance(symbol, period)
+    
+    if prices:
+        return prices, stock_info
+    
+    # Fallback to AlphaVantage if yfinance fails
+    if ALPHA_VANTAGE_API_KEY:
+        print(f"Falling back to AlphaVantage for {symbol}...")
+        try:
+            return fetch_from_alpha_vantage(symbol, period)
+        except Exception as e:
+            print(f"AlphaVantage fallback failed: {e}")
+    
+    # Return empty if both fail
+    return [], {}
+
+
+def fetch_from_alpha_vantage(symbol: str, period: str = '3mo') -> Tuple[List[float], dict]:
+    """
+    Fetch historical stock data from AlphaVantage API (backup method)
     """
     try:
         print(f"Fetching {symbol} data from AlphaVantage...")
@@ -66,10 +142,11 @@ def fetch_stock_data(symbol: str, period: str = '3mo', interval: str = '1d') -> 
         # Check for rate limit or errors
         if "Note" in data:
             print("⚠️ Rate limit hit - AlphaVantage free tier limit")
-            return [], {}
+            print(f"DEBUG: Rate limit message: {data.get('Note')}")
+            return [], {"error": "rate_limit", "message": data.get("Note", "Rate limit exceeded")}
         if "Error Message" in data:
             print(f"⚠️ API Error: {data.get('Error Message')}")
-            return [], {}
+            return [], {"error": "api_error", "message": data.get("Error Message")}
         
         # Find the time series key dynamically
         time_series = {}
@@ -81,7 +158,7 @@ def fetch_stock_data(symbol: str, period: str = '3mo', interval: str = '1d') -> 
                     break
         
         if not time_series:
-            print(f"⚠️ No data for {symbol}")
+            print(f"⚠️ No time series data for {symbol} from AlphaVantage")
             print(f"DEBUG: Full response: {data}")
             return [], {}
         
@@ -103,8 +180,8 @@ def fetch_stock_data(symbol: str, period: str = '3mo', interval: str = '1d') -> 
         return prices, stock_info
     
     except Exception as e:
-        print(f"❌ Error fetching stock data: {e}")
-        raise
+        print(f"❌ Error fetching stock data from AlphaVantage: {e}")
+        return [], {}
 
 
 def get_current_price(symbol: str) -> Optional[float]:

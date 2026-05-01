@@ -28,10 +28,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# NewsAPI Key - MUST be set in environment variables
-NEWS_API_KEY = os.environ.get("NEWS_API_KEY")
+# NewsAPI Key - optional
+NEWS_API_KEY = os.environ.get("NEWS_API_KEY", "")
 if not NEWS_API_KEY:
-    raise ValueError("NEWS_API_KEY environment variable not set!")
+    print("⚠️  NEWS_API_KEY not set - news features may be limited")
 
 class RecommendationRequest(BaseModel):
     symbol: str
