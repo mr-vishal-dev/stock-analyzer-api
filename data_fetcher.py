@@ -101,20 +101,24 @@ def fetch_stock_data(symbol: str, period: str = '3mo', interval: str = '1d') -> 
     print(f"Fetching {symbol} data via yfinance...")
     prices, stock_info = fetch_with_yfinance(symbol, period)
     
-    if prices:
-        return prices, stock_info
+    # Use demo data if insufficient prices (less than 5)
+    if not prices or len(prices) < 5:
+        print(f"⚠️ Insufficient data from yfinance ({len(prices) if prices else 0} prices), trying AlphaVantage...")
+        
+        # Fallback to AlphaVantage if yfinance fails
+        if ALPHA_VANTAGE_API_KEY:
+            try:
+                prices_av, stock_info_av = fetch_from_alpha_vantage(symbol, period)
+                if prices_av and len(prices_av) >= 5:
+                    return prices_av, stock_info_av
+            except Exception as e:
+                print(f"AlphaVantage fallback failed: {e}")
+        
+        # Return demo data as last resort
+        print(f"⚠️ All data sources failed for {symbol}, using demo data")
+        return get_demo_data(symbol)
     
-    # Fallback to AlphaVantage if yfinance fails
-    if ALPHA_VANTAGE_API_KEY:
-        print(f"Falling back to AlphaVantage for {symbol}...")
-        try:
-            return fetch_from_alpha_vantage(symbol, period)
-        except Exception as e:
-            print(f"AlphaVantage fallback failed: {e}")
-    
-    # Return demo data as last resort
-    print(f"⚠️ All data sources failed for {symbol}, using demo data")
-    return get_demo_data(symbol)
+    return prices, stock_info
 
 
 def get_demo_data(symbol: str) -> Tuple[List[float], dict]:
